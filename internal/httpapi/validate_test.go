@@ -51,3 +51,13 @@ func TestParseRequestUnknownRes(t *testing.T) {
 	_, err := ParseRequest(q)
 	require.ErrorIs(t, err, ErrBadRequest)
 }
+
+func TestParseRequestEmbedOnlyWithSlowPathParams(t *testing.T) {
+	q, _ := url.ParseQuery("file=x.NEF&embed_only=true&wb=camera")
+	_, err := ParseRequest(q)
+	require.ErrorIs(t, err, ErrBadRequest)
+
+	q, _ = url.ParseQuery("file=x.NEF&embed_only=true&exp=1.5")
+	_, err = ParseRequest(q)
+	require.ErrorIs(t, err, ErrBadRequest)
+}

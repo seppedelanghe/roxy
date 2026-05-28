@@ -67,6 +67,10 @@ func ParseRequest(q url.Values) (Request, error) {
 		return Request{}, fmt.Errorf("%w: invalid half_size", ErrBadRequest)
 	}
 
+	if r.EmbedOnly && (r.WB != "auto" || r.Exp != 0) {
+		return Request{}, fmt.Errorf("%w: embed_only=true is incompatible with wb!=auto or exp!=0", ErrBadRequest)
+	}
+
 	return r, nil
 }
 
