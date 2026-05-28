@@ -1,0 +1,5 @@
+.git
+bin/
+testdata/
+docs/
+*.md
