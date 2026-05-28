@@ -43,6 +43,15 @@ func TestHealthz(t *testing.T) {
 	require.Equal(t, "ok", rec.Body.String())
 }
 
+func TestHealthzDraining(t *testing.T) {
+	h, _ := newTestHandler(t)
+	h.Healthy = func() bool { return false }
+	rec := httptest.NewRecorder()
+	h.Healthz(rec, httptest.NewRequest("GET", "/healthz", nil))
+	require.Equal(t, http.StatusServiceUnavailable, rec.Code)
+	require.Equal(t, "draining", rec.Body.String())
+}
+
 func TestProcessNotFound(t *testing.T) {
 	h, _ := newTestHandler(t)
 	q := url.Values{}
