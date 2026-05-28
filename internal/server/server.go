@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -32,6 +33,9 @@ func Run(opts Options) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", opts.Handler.Healthz)
 	mux.HandleFunc("/process", opts.Handler.Process)
+
+	var asyncWG sync.WaitGroup
+	opts.Handler.AsyncWG = &asyncWG
 
 	var draining atomic.Bool
 	opts.Handler.Healthy = func() bool { return !draining.Load() }
@@ -76,6 +80,7 @@ func Run(opts Options) error {
 	defer cancel()
 	err := srv.Shutdown(ctx)
 	cancelEvict()
+	asyncWG.Wait()
 	sweepTmp(opts.CacheDir)
 	return err
 }

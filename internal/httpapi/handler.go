@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/seppedelanghe/roxy/internal/backend"
@@ -36,6 +37,10 @@ type Handler struct {
 	SlowWait     time.Duration
 	Healthy      func() bool
 	Scratch      string
+	// AsyncWG tracks in-flight async cache-write goroutines.
+	// When non-nil, server.Run waits for it to reach zero before sweeping tmp files.
+	// Unit tests that don't set it keep working because all Add/Done calls are guarded.
+	AsyncWG *sync.WaitGroup
 }
 
 func (h *Handler) Healthz(w http.ResponseWriter, r *http.Request) {
@@ -154,7 +159,13 @@ func (h *Handler) Process(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if h.AsyncWG != nil {
+		h.AsyncWG.Add(1)
+	}
 	go func(buf []byte) {
+		if h.AsyncWG != nil {
+			defer h.AsyncWG.Done()
+		}
 		if err := h.Cache.Store(key, buf, contentTypeFor(format)); err != nil {
 			h.Log.Warn("cache_store_failed", "key", key, "err", err)
 		}
