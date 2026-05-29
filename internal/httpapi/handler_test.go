@@ -132,6 +132,29 @@ func TestProcessDirectPNG(t *testing.T) {
 	require.Equal(t, "direct", rec.Header().Get("X-Path"))
 }
 
+func writeWebPFixture(t *testing.T, p *vipsproc.Pipeline, path string, w, h int) {
+	// Go's stdlib has no WebP encoder; generate valid WebP bytes via libvips.
+	data, _, err := p.ProcessImage(image.NewRGBA(image.Rect(0, 0, w, h)),
+		vipsproc.Options{Format: vipsproc.FormatWebP})
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(path, data, 0644))
+}
+
+func TestProcessDirectWebP(t *testing.T) {
+	h, root := newTestHandler(t)
+	h.Vips = vipsproc.NewPipeline()
+	writeWebPFixture(t, h.Vips, filepath.Join(root, "pic.webp"), 1000, 800)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/process?file=pic.webp&res=720p", nil)
+	req.Header.Set("Accept", "image/webp")
+	h.Process(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, "image/webp", rec.Header().Get("Content-Type"))
+	require.Equal(t, "direct", rec.Header().Get("X-Path"))
+}
+
 func TestProcessDirectIgnoresRawParams(t *testing.T) {
 	h, root := newTestHandler(t)
 	h.Vips = vipsproc.NewPipeline()
