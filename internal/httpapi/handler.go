@@ -1,9 +1,8 @@
 package httpapi
 
 import (
-	"bytes"
-	crand "crypto/rand"
 	"context"
+	crand "crypto/rand"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -264,7 +263,7 @@ func vipsOpts(req Request, format string) vipsproc.Options {
 }
 
 func (h *Handler) materialize(ctx context.Context, key string) (string, func(), *processError) {
-	obj, _, err := h.Backend.Open(ctx, key)
+	obj, stat, err := h.Backend.Open(ctx, key)
 	if err != nil {
 		if errors.Is(err, backend.ErrNotFound) {
 			return "", func() {}, &processError{ErrNotFound, "not found"}
@@ -292,27 +291,9 @@ func (h *Handler) materialize(ctx context.Context, key string) (string, func(), 
 		obj.Close()
 		return "", func() {}, &processError{ErrInternal, err.Error()}
 	}
-	buf := bytes.NewBuffer(nil)
-	const block = 4 * 1024 * 1024
-	off := int64(0)
-	tmpBuf := make([]byte, block)
-	for {
-		n, rerr := obj.ReadAt(tmpBuf, off)
-		if n > 0 {
-			buf.Write(tmpBuf[:n])
-			off += int64(n)
-		}
-		if rerr == io.EOF {
-			break
-		}
-		if rerr != nil {
-			out.Close()
-			obj.Close()
-			os.Remove(tmp)
-			return "", func() {}, &processError{ErrInternal, rerr.Error()}
-		}
-	}
-	if _, err := out.Write(buf.Bytes()); err != nil {
+	// Stream straight to disk in fixed-size chunks rather than buffering the
+	// whole source in memory (sources can be up to MaxInputSize).
+	if _, err := io.Copy(out, io.NewSectionReader(obj, 0, stat.Size)); err != nil {
 		out.Close()
 		obj.Close()
 		os.Remove(tmp)
