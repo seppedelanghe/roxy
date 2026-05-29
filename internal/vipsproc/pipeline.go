@@ -48,7 +48,10 @@ func NewPipeline() *Pipeline {
 	return &Pipeline{}
 }
 
-func (p *Pipeline) ProcessJPEG(in []byte, opts Options) ([]byte, string, error) {
+// ProcessEncoded resizes and re-encodes an already-encoded image buffer
+// (JPEG, PNG, WebP, or a RAW embedded preview). The input format is detected
+// by libvips from the buffer.
+func (p *Pipeline) ProcessEncoded(in []byte, opts Options) ([]byte, string, error) {
 	img, err := vips.NewImageFromBuffer(in)
 	if err != nil {
 		return nil, "", err

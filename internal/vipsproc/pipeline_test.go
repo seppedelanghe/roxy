@@ -5,22 +5,47 @@ import (
 	"image"
 	"image/color"
 	"image/jpeg"
+	"image/png"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
-func TestProcessFromJPEGBytes_Resize(t *testing.T) {
+func TestProcessEncoded_JPEGResize(t *testing.T) {
 	p := NewPipeline()
 
 	src := makeJPEG(t, 2000, 1000)
-	out, ct, err := p.ProcessJPEG(src, Options{Width: 1000, Height: 500, Fit: FitScale, Format: FormatJPEG})
+	out, ct, err := p.ProcessEncoded(src, Options{Width: 1000, Height: 500, Fit: FitScale, Format: FormatJPEG})
 	require.NoError(t, err)
 	require.Equal(t, "image/jpeg", ct)
 
 	img, err := jpeg.Decode(bytes.NewReader(out))
 	require.NoError(t, err)
 	require.LessOrEqual(t, img.Bounds().Dx(), 1000)
+}
+
+func TestProcessEncoded_PNGInput(t *testing.T) {
+	p := NewPipeline()
+
+	src := makePNG(t, 800, 400)
+	out, ct, err := p.ProcessEncoded(src, Options{Width: 400, Height: 200, Fit: FitScale, Format: FormatPNG})
+	require.NoError(t, err)
+	require.Equal(t, "image/png", ct)
+	require.Greater(t, len(out), 0)
+}
+
+func TestProcessEncoded_WebPInput(t *testing.T) {
+	p := NewPipeline()
+
+	// Produce WebP bytes via the pipeline, then feed them back in as input.
+	webpIn, _, err := p.ProcessImage(image.NewRGBA(image.Rect(0, 0, 800, 400)),
+		Options{Format: FormatWebP})
+	require.NoError(t, err)
+
+	out, ct, err := p.ProcessEncoded(webpIn, Options{Width: 400, Height: 200, Fit: FitScale, Format: FormatJPEG})
+	require.NoError(t, err)
+	require.Equal(t, "image/jpeg", ct)
+	require.Greater(t, len(out), 0)
 }
 
 func TestProcessFromImage_FormatWebP(t *testing.T) {
@@ -40,5 +65,12 @@ func makeJPEG(t *testing.T, w, h int) []byte {
 	img := image.NewRGBA(image.Rect(0, 0, w, h))
 	var buf bytes.Buffer
 	require.NoError(t, jpeg.Encode(&buf, img, &jpeg.Options{Quality: 85}))
+	return buf.Bytes()
+}
+
+func makePNG(t *testing.T, w, h int) []byte {
+	img := image.NewRGBA(image.Rect(0, 0, w, h))
+	var buf bytes.Buffer
+	require.NoError(t, png.Encode(&buf, img))
 	return buf.Bytes()
 }

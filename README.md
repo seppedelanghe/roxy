@@ -1,8 +1,8 @@
 # roxy
 
-**RAW-first image optimization proxy** on-the-fly processing, resizing, and caching of camera RAW files (`.CR2`, `.CR3`, `.NEF`, `.ARW`, `.DNG`, and more), served over HTTP.
+**RAW-first image optimization proxy** on-the-fly processing, resizing, and caching of camera RAW files (`.CR2`, `.CR3`, `.NEF`, `.ARW`, `.DNG`, and more) plus common web formats (JPEG, PNG, WebP), served over HTTP.
 
-![Go 1.24+](https://img.shields.io/badge/Go-1.24%2B-00ADD8?logo=go)
+![Go 1.26+](https://img.shields.io/badge/Go-1.26%2B-00ADD8?logo=go)
 
 ---
 
@@ -13,6 +13,8 @@ Most image proxies assume JPEG or PNG as input or forces a subscription for RAW 
 It pairs my custom [Go LibRaw bindings](https://github.com/seppedelanghe/go-libraw) with `libvips` to deliver a fast, open-source alternative to commercial RAW image services.
 
 **Supported RAW formats:** Canon CR2/CR3, Nikon NEF, Sony ARW, Adobe DNG, and all other formats supported by LibRaw 0.21+.
+
+**Supported non-RAW inputs:** JPEG, PNG, and WebP are detected by content and decoded directly via `libvips`, skipping LibRaw entirely.
 
 ### How it stays fast
 
@@ -35,8 +37,10 @@ The slow path is gated by a concurrency semaphore so a burst of RAW-adjustment r
       MISS
        │
        ▼
-  Open RAW via storage backend
+  Open source via storage backend
        │
+       ├── JPEG/PNG/WebP? ──YES──→ [ DIRECT PATH ] decode via libvips
+       │                                                 │
        ├── embedded JPEG large enough? ──YES──→ [ FAST PATH ] extract preview (~1–5ms)
        │                                                 │
        └── NO ───────────────────────────────→ [ SLOW PATH ] demosaic (~100–300ms)
@@ -55,7 +59,7 @@ The slow path is gated by a concurrency semaphore so a burst of RAW-adjustment r
 
 - **Arbitrary dimensions** - only whitelisted presets (`thumb`, `480p`, `720p`, `1080p`) are accepted. This is intentional: arbitrary `WxH` values are a DDoS vector for RAW processing.
 - **RAW editing** - `roxy` applies basic white balance and exposure correction, but it is not a replacement for Lightroom, Darktable, or any full RAW editor.
-- **Non-RAW input** - JPEG, PNG, TIFF, and video files are not (yet) supported as source material.
+- **TIFF / video input** - JPEG, PNG, and WebP are supported as source material; TIFF (its magic bytes collide with TIFF-based RAW) and video files are not.
 - **S3 / remote storage** - the v1 release ships with a local filesystem backend only. S3-compatible backends are on the roadmap but not included.
 - **Metrics and tracing** - structured JSON logs are written to stdout, metrics and distributed tracing are out of scope.
 
@@ -65,7 +69,7 @@ The slow path is gated by a concurrency semaphore so a burst of RAW-adjustment r
 
 ### Prerequisites
 
-- Go 1.24+ (build only)
+- Go 1.26+ (build only)
 - `libraw-dev` >= 0.21
 - `libvips-dev` >= 8.14
 
@@ -78,23 +82,26 @@ make build
 
 ### Run with Docker
 
+The repository ships a multi-stage [`Dockerfile`](./Dockerfile):
+
 ```dockerfile
 # Stage 1: build
-FROM golang:1.24-bookworm AS builder
-
-RUN apt-get update && apt-get install -y \
-    libraw-dev libvips-dev build-essential
-
+FROM golang:1.26-trixie AS builder
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libraw-dev libvips-dev build-essential pkg-config \
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
+COPY go.mod go.sum ./
+RUN go mod download
 COPY . .
-RUN go build -tags vips -o roxy ./cmd/roxy
+RUN CGO_ENABLED=1 go build -tags vips -o /out/roxy ./cmd/roxy
 
 # Stage 2: minimal runtime
-FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y libraw23 libvips42 \
+FROM debian:trixie-slim
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libraw23 libvips42 ca-certificates \
     && rm -rf /var/lib/apt/lists/*
-
-COPY --from=builder /app/roxy /usr/local/bin/roxy
+COPY --from=builder /out/roxy /usr/local/bin/roxy
 EXPOSE 8080
 ENTRYPOINT ["roxy"]
 ```
@@ -134,6 +141,8 @@ Fetch, process, and return a resized image from a RAW source file.
 | `embed_only` | no | `false` | Return `422` instead of slow-path if no embedded preview |
 | `half_size` | no | `false` | Half-size LibRaw decode (faster fallback for slow path) |
 
+For non-RAW input (JPEG/PNG/WebP), the RAW-only parameters (`wb`, `exp`, `embed_only`, `half_size`) are accepted but ignored.
+
 The output format is negotiated via the `Accept` header. Supported types: `image/jpeg`, `image/png`, `image/webp`. Defaults to `image/jpeg`.
 
 **Examples:**
@@ -155,7 +164,7 @@ curl -H "Accept: image/jpeg" \
 | Header | Description |
 |--------|-------------|
 | `X-Cache` | `HIT` or `MISS` |
-| `X-Path` | `cache`, `fast`, or `slow` -> which pipeline served the request |
+| `X-Path` | `cache`, `direct`, `fast`, or `slow` -> which pipeline served the request |
 | `ETag` | Strong cache validator (SHA-256 of content key) |
 
 ### `GET /healthz`
