@@ -208,7 +208,7 @@ func (h *Handler) process(ctx context.Context, req Request, format string) ([]by
 		data, info, err := h.RAW.ExtractLargestPreview(ctx, localPath)
 		if err == nil {
 			if req.Preset.LongestEdge() == 0 || info.LongestEdge >= req.Preset.LongestEdge() {
-				out, _, vErr := h.Vips.ProcessJPEG(data, vipsOpts(req, format))
+				out, _, vErr := h.Vips.ProcessEncoded(data, vipsOpts(req, format))
 				if vErr != nil {
 					return nil, "fast", &processError{ErrInternal, vErr.Error()}
 				}
