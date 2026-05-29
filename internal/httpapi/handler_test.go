@@ -149,7 +149,8 @@ func TestProcessDirectIgnoresRawParams(t *testing.T) {
 func TestProcessDirectCorruptIsUnsupported(t *testing.T) {
 	h, root := newTestHandler(t)
 	h.Vips = vipsproc.NewPipeline()
-	// Valid JPEG magic, garbage body: detected as JPEG, libvips fails to decode.
+	// Valid JPEG SOI+marker, intentionally truncated body: detected as JPEG,
+	// relies on libvips rejecting it as undecodable.
 	require.NoError(t, os.WriteFile(filepath.Join(root, "bad.jpg"),
 		append([]byte{0xFF, 0xD8, 0xFF}, []byte("not a real jpeg")...), 0644))
 

@@ -329,6 +329,7 @@ func detectKind(path string) (inputfmt.Kind, error) {
 		return inputfmt.KindRAW, err
 	}
 	defer f.Close()
+	// 16 bytes covers every signature inputfmt checks; WebP needs the most (12).
 	var hdr [16]byte
 	n, err := f.Read(hdr[:])
 	if err != nil && err != io.EOF {
