@@ -19,6 +19,7 @@ import (
 	"github.com/seppedelanghe/roxy/internal/backend"
 	"github.com/seppedelanghe/roxy/internal/cachekey"
 	"github.com/seppedelanghe/roxy/internal/diskcache"
+	"github.com/seppedelanghe/roxy/internal/inputfmt"
 	"github.com/seppedelanghe/roxy/internal/raw"
 	"github.com/seppedelanghe/roxy/internal/vipsproc"
 )
@@ -203,6 +204,22 @@ func (h *Handler) process(ctx context.Context, req Request, format string) ([]by
 	}
 	defer cleanup()
 
+	kind, kErr := detectKind(localPath)
+	if kErr != nil {
+		return nil, "", &processError{ErrInternal, kErr.Error()}
+	}
+	if kind.Direct() {
+		data, rErr := os.ReadFile(localPath)
+		if rErr != nil {
+			return nil, "direct", &processError{ErrInternal, rErr.Error()}
+		}
+		out, _, vErr := h.Vips.ProcessEncoded(data, vipsOpts(req, format))
+		if vErr != nil {
+			return nil, "direct", &processError{ErrUnsupportedFormat, vErr.Error()}
+		}
+		return out, "direct", nil
+	}
+
 	wantFast := req.WB == "auto" && req.Exp == 0
 	if wantFast {
 		data, info, err := h.RAW.ExtractLargestPreview(ctx, localPath)
@@ -302,4 +319,20 @@ func (h *Handler) materialize(ctx context.Context, key string) (string, func(), 
 	out.Close()
 	obj.Close()
 	return tmp, func() { os.Remove(tmp) }, nil
+}
+
+// detectKind reads the leading bytes of a materialized source file and
+// classifies its format. A short read is fine; inputfmt treats it as RAW.
+func detectKind(path string) (inputfmt.Kind, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return inputfmt.KindRAW, err
+	}
+	defer f.Close()
+	var hdr [16]byte
+	n, err := f.Read(hdr[:])
+	if err != nil && err != io.EOF {
+		return inputfmt.KindRAW, err
+	}
+	return inputfmt.Detect(hdr[:n]), nil
 }
